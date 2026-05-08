@@ -1,87 +1,41 @@
-import re
-import sys
+import warnings
 
-from joblib.testing import check_subprocess_call, raises
+import pytest
 
-
-def test_check_subprocess_call():
-    code = "\n".join(
-        ["result = 1 + 2 * 3", "print(result)", "my_list = [1, 2, 3]", "print(my_list)"]
-    )
-
-    check_subprocess_call([sys.executable, "-c", code])
-
-    # Now checking stdout with a regex
-    check_subprocess_call(
-        [sys.executable, "-c", code],
-        # Regex needed for platform-specific line endings
-        stdout_regex=r"7\s{1,2}\[1, 2, 3\]",
-    )
+import matplotlib.pyplot as plt
+from matplotlib.testing.decorators import check_figures_equal
 
 
-def test_check_subprocess_call_non_matching_regex():
-    code = "42"
-    non_matching_pattern = "_no_way_this_matches_anything_"
-
-    with raises(ValueError) as excinfo:
-        check_subprocess_call(
-            [sys.executable, "-c", code], stdout_regex=non_matching_pattern
-        )
-    excinfo.match("Unexpected stdout.+{}".format(non_matching_pattern))
+@pytest.mark.xfail(
+    strict=True, reason="testing that warnings fail tests"
+)
+def test_warn_to_fail():
+    warnings.warn("This should fail the test")
 
 
-def test_check_subprocess_call_wrong_command():
-    wrong_command = "_a_command_that_does_not_exist_"
-    with raises(OSError):
-        check_subprocess_call([wrong_command])
+@pytest.mark.parametrize("a", [1])
+@check_figures_equal(extensions=["png"])
+@pytest.mark.parametrize("b", [1])
+def test_parametrize_with_check_figure_equal(a, fig_ref, b, fig_test):
+    assert a == b
 
 
-def test_check_subprocess_call_non_zero_return_code():
-    code_with_non_zero_exit = "\n".join(
-        [
-            "import sys",
-            'print("writing on stdout")',
-            'sys.stderr.write("writing on stderr")',
-            "sys.exit(123)",
-        ]
-    )
-
-    pattern = re.compile(
-        "Non-zero return code: 123.+"
-        "Stdout:\nwriting on stdout.+"
-        "Stderr:\nwriting on stderr",
-        re.DOTALL,
-    )
-
-    with raises(ValueError) as excinfo:
-        check_subprocess_call([sys.executable, "-c", code_with_non_zero_exit])
-    excinfo.match(pattern)
+def test_wrap_failure():
+    with pytest.raises(ValueError, match="^The decorated function"):
+        @check_figures_equal()
+        def should_fail(test, ref):
+            pass
 
 
-def test_check_subprocess_call_timeout():
-    code_timing_out = "\n".join(
-        [
-            "import time",
-            "import sys",
-            'print("before sleep on stdout")',
-            "sys.stdout.flush()",
-            'sys.stderr.write("before sleep on stderr")',
-            "sys.stderr.flush()",
-            # We need to sleep for at least 2 * timeout seconds in case the SIGKILL
-            # is triggered.
-            "time.sleep(10)",
-            'print("process should have be killed before")',
-            "sys.stdout.flush()",
-        ]
-    )
+@pytest.mark.xfail(raises=RuntimeError, strict=True,
+                   reason='Test for check_figures_equal test creating '
+                          'new figures')
+@check_figures_equal()
+def test_check_figures_equal_extra_fig(fig_test, fig_ref):
+    plt.figure()
 
-    pattern = re.compile(
-        "Non-zero return code:.+"
-        "Stdout:\nbefore sleep on stdout\\s+"
-        "Stderr:\nbefore sleep on stderr",
-        re.DOTALL,
-    )
 
-    with raises(ValueError) as excinfo:
-        check_subprocess_call([sys.executable, "-c", code_timing_out], timeout=1)
-    excinfo.match(pattern)
+@check_figures_equal()
+def test_check_figures_equal_closed_fig(fig_test, fig_ref):
+    fig = plt.figure()
+    plt.close(fig)
